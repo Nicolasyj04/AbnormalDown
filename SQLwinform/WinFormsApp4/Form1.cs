@@ -25,8 +25,8 @@ namespace WinFormsApp4
             {
                 DateTime fetchTime = dtpFetchTime.Value;
                 string sysNo = txtSysNo.Text;
-                string localDbConn = "Server=myServer;Database=myDB;User Id=myUser;Password=myPassword;"; // 请替换为你的实际连接字符串
-
+               	string localDbConn = @"Server=172.31.10.251\sql2012;Database=wsbase660;User Id=sa;Password=system;";
+                //string localDbConn = "Server=172.31.10.251\\sql2012;Database=wsbase660;User Id=sa;Password=system;";
                 ProductLineAnalyzer analyzer = new ProductLineAnalyzer(localDbConn);
                 analyzer.ExecuteAnalysis(fetchTime, sysNo);
                 MessageBox.Show("分析并写入完成！", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);

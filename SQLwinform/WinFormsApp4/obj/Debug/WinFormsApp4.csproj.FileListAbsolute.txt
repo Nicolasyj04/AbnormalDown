@@ -3,3 +3,8 @@ C:\Users\USER\Documents\SharpDevelop Projects\WinFormsApp4\WinFormsApp4\bin\Debu
 C:\Users\USER\Documents\SharpDevelop Projects\WinFormsApp4\WinFormsApp4\bin\Debug\WinFormsApp4.pdb
 C:\Users\USER\Documents\SharpDevelop Projects\WinFormsApp4\WinFormsApp4\obj\Debug\WinFormsApp4.exe
 C:\Users\USER\Documents\SharpDevelop Projects\WinFormsApp4\WinFormsApp4\obj\Debug\WinFormsApp4.pdb
+C:\Users\USER\Desktop\workspace\4、C#重写SQL\SQLwinform\WinFormsApp4\obj\Debug\WinFormsApp4.csprojResolveAssemblyReference.cache
+C:\Users\USER\Desktop\workspace\4、C#重写SQL\SQLwinform\WinFormsApp4\obj\Debug\WinFormsApp4.exe
+C:\Users\USER\Desktop\workspace\4、C#重写SQL\SQLwinform\WinFormsApp4\bin\Debug\WinFormsApp4.exe
+C:\Users\USER\Desktop\workspace\4、C#重写SQL\SQLwinform\WinFormsApp4\bin\Debug\WinFormsApp4.pdb
+C:\Users\USER\Desktop\workspace\4、C#重写SQL\SQLwinform\WinFormsApp4\obj\Debug\WinFormsApp4.pdb

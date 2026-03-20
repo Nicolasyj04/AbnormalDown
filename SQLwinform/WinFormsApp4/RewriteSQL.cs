@@ -59,13 +59,18 @@ public class ProductLineAnalyzer
         using (SqlConnection localConn = new SqlConnection(_localConnectionString))
         {
             localConn.Open();
-            remoteConnString = GetSysParameter(localConn, "hzds_receive_address");
-
+            //remoteConnString = GetSysParameter(localConn, "hzds_receive_address");
+			remoteConnString = @"Data Source=172.31.10.251\server; Database=datacollect_base; Uid=sa; Pwd=system; pooling=true; min pool size=5; max pool size=512;";
             string timeStr = GetSysParameter(localConn, "ProductLine_Abnormal_Diff_Time_Set");
-            if (int.TryParse(timeStr, out int timeVal))
-            {
-                abnormalTimeThreshold = timeVal;
-            }
+
+			// 1. 先声明一个整型变量来作为容器接收结果
+			int timeVal;
+			
+			// 2. 在方法调用中传入该变量，保留 out 关键字但不加类型
+			if (int.TryParse(timeStr, out timeVal))
+			{
+			    abnormalTimeThreshold = timeVal;
+			}
 
             allRestTimes = GetRestTimesFromLocalDB(localConn, inputDate, searchDate, endDate);
 
@@ -137,7 +142,7 @@ public class ProductLineAnalyzer
         using (SqlConnection localConn = new SqlConnection(_localConnectionString))
         {
             localConn.Open();
-            using (SqlCommand cmd = new SqlCommand("DELETE FROM T200_product_line_hour_diff_result WHERE input_date = @InputDate", localConn))
+            using (SqlCommand cmd = new SqlCommand("DELETE FROM T200_product_line_hour_diff_result_Csharp WHERE input_date = @InputDate", localConn))
             {
                 cmd.Parameters.AddWithValue("@InputDate", inputDate);
                 cmd.ExecuteNonQuery();
@@ -145,7 +150,7 @@ public class ProductLineAnalyzer
 
             using (SqlBulkCopy bulkCopy = new SqlBulkCopy(localConn))
             {
-                bulkCopy.DestinationTableName = "T200_product_line_hour_diff_result";
+                bulkCopy.DestinationTableName = "T200_product_line_hour_diff_result_Csharp";
                 bulkCopy.BatchSize = 1000;
                 bulkCopy.WriteToServer(resultTable);
             }
@@ -325,26 +330,23 @@ public class ProductLineAnalyzer
     /// 还原 SQL 中的巨型 CASE WHEN，根据停机发生时间判断属于哪个小时段
     /// </summary>
     private string GetHourName(DateTime time, DateTime searchDate)
-    {
-        // 1. 计算当前时间距离早班起点 (searchDate, 即 8:00) 过去了多少小时
-        int hoursDiff = (int)Math.Floor((time - searchDate).TotalHours);
-
-        // 2. 限制在 0-23 的范围内 (24小时制)
-        if (hoursDiff < 0) hoursDiff = 0;
-        if (hoursDiff > 23) hoursDiff = 23;
-
-        // 3. 根据小时差推导时间段
-        int startHour = (8 + hoursDiff) % 24;
-        int endHour = (startHour + 1) % 24;
-
-        string endHourStr = (endHour == 0) ? "00" : endHour.ToString();
-
-        // ==========================================
-        // 【修改点】：使用 string.Format 替代 $"" 语法
-        // {0} 对应 startHour，{1} 对应 endHourStr
-        // ==========================================
-        return string.Format("{0}:00~{1}:00", startHour, endHourStr);
-    }
+	{
+	    int hoursDiff = (int)Math.Floor((time - searchDate).TotalHours);
+	    if (hoursDiff < 0) hoursDiff = 0;
+	    if (hoursDiff > 23) hoursDiff = 23;
+	
+	    int startHour = (8 + hoursDiff) % 24;
+	    int endHour = (startHour + 1) % 24;
+	
+	    // 针对原 SQL 中对凌晨时段带前导零 (00:00~07:00)，而白天不带 (8:00~9:00) 的特殊脾气进行精确适配
+	    string startHourStr = (startHour >= 0 && startHour <= 7) ? startHour.ToString("D2") : startHour.ToString();
+	    string endHourStr = (endHour >= 0 && endHour <= 8) ? endHour.ToString("D2") : endHour.ToString();
+	    
+	    // 处理特例：如果是 23点到0点，结尾应该是 00:00
+	    if (endHour == 0) endHourStr = "00";
+	
+	    return string.Format("{0}:00~{1}:00", startHourStr, endHourStr);
+	}
 
     private string GetSysParameter(SqlConnection conn, string parName)
     {
