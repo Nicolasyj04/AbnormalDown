@@ -25,7 +25,7 @@ public class ValidDowntimeSegment
 {
     public DateTime StartTime { get; set; }
     public DateTime EndTime { get; set; }
-    public double DiffMinutes { get; set; }
+    public int DiffMinutes { get; set; }
 }
 
 public class ProductLineAnalyzer
@@ -36,7 +36,14 @@ public class ProductLineAnalyzer
     {
         _localConnectionString = localConnectionString;
     }
-
+	// 模拟 SQL Server 的 DATEDIFF(MINUTE, a, b)
+	private int GetSqlMinuteDiff(DateTime a, DateTime b)
+	{
+	    // 将秒和毫秒全部置零，只保留到分钟
+	    DateTime truncA = new DateTime(a.Year, a.Month, a.Day, a.Hour, a.Minute, 0);
+	    DateTime truncB = new DateTime(b.Year, b.Month, b.Day, b.Hour, b.Minute, 0);
+	    return (int)(truncB - truncA).TotalMinutes;
+	}
     public void ExecuteAnalysis(DateTime dtFetchTime, string sysNo)
     {
         // 参数解释：
@@ -102,7 +109,7 @@ public class ProductLineAnalyzer
 
         // 业务场景：扫描表(tx02_scan_record)不仅按产线，还按工站(op_no)和相机(camera_note)区分。
         // 所以我们用这三个字段作为联合主键进行分组。
-        var groupedRecords = rawRecords.GroupBy(r => new { r.ProductLineNo, r.OpNo, r.CameraNote });
+       var groupedRecords = rawRecords.GroupBy(r => new { r.ProductLineNo, r.OpNo });
 
         foreach (var group in groupedRecords)
         {
@@ -114,7 +121,7 @@ public class ProductLineAnalyzer
             // 1. 处理班次开始 (@SearchDate) 到第一条记录之间的异常停机
             // 对应 SQL 中的第一部分和第二部分 (UNION 的上半部分)
             ProcessSegmentAndFillTable(
-                sysNo, inputDate, group.Key.ProductLineNo, group.Key.OpNo, group.Key.CameraNote,
+                sysNo, inputDate, group.Key.ProductLineNo, group.Key.OpNo, sortedList[0].CameraNote,
                 sortedList[0].BatchNo, // 批次号取结束点的
                 searchDate,            // 班次起点
                 sortedList[0].RecordTime, // 第一条记录的时间
@@ -128,7 +135,7 @@ public class ProductLineAnalyzer
                 var curr = sortedList[i];
 
                 ProcessSegmentAndFillTable(
-                    sysNo, inputDate, group.Key.ProductLineNo, group.Key.OpNo, group.Key.CameraNote,
+                    sysNo, inputDate, group.Key.ProductLineNo, group.Key.OpNo, curr.CameraNote,
                     curr.BatchNo,
                     prev.RecordTime, // 上一次打卡时间
                     curr.RecordTime, // 本次打卡时间
@@ -199,43 +206,50 @@ public class ProductLineAnalyzer
     /// <summary>
     /// 扣除休息时间的核心算法 (替代原 SQL 的逐分钟 WHILE 循环)
     /// </summary>
-    private List<ValidDowntimeSegment> GetEffectiveDowntimes(DateTime eventStart, DateTime eventEnd, List<RestTimeRecord> restTimes, int abnormalThreshold)
-    {
-        List<ValidDowntimeSegment> validSegments = new List<ValidDowntimeSegment>();
-        DateTime currentStart = eventStart;
-
-        // 确保休息时间按先后顺序排列，便于进行线段切割
-        var sortedRests = restTimes.OrderBy(r => r.StartTime).ToList();
-
-        foreach (var rest in sortedRests)
-        {
-            if (rest.EndTime <= currentStart) continue; // 休息时间在当前检查点之前，跳过
-            if (rest.StartTime >= eventEnd) break;      // 休息时间在当前事件之后，直接结束比对
-
-            // 如果当前检查点到休息开始前，有一段纯工作时间
-            if (currentStart < rest.StartTime)
-            {
-                double diff = (rest.StartTime - currentStart).TotalMinutes;
-                if (diff > abnormalThreshold) // 超过异常阈值才算停机
-                {
-                    validSegments.Add(new ValidDowntimeSegment { StartTime = currentStart, EndTime = rest.StartTime, DiffMinutes = diff });
-                }
-            }
-            // 将检查点移动到休息结束的时间，跳过休息期
-            currentStart = new DateTime(Math.Max(currentStart.Ticks, rest.EndTime.Ticks));
-        }
-
-        // 检查最后一段休息结束到事件结束之间的时间
-        if (currentStart < eventEnd)
-        {
-            double finalDiff = (eventEnd - currentStart).TotalMinutes;
-            if (finalDiff > abnormalThreshold)
-            {
-                validSegments.Add(new ValidDowntimeSegment { StartTime = currentStart, EndTime = eventEnd, DiffMinutes = finalDiff });
-            }
-        }
-        return validSegments;
-    }
+   private List<ValidDowntimeSegment> GetEffectiveDowntimes(DateTime eventStart, DateTime eventEnd, List<RestTimeRecord> restTimes, int abnormalThreshold)
+	{
+	    List<ValidDowntimeSegment> validSegments = new List<ValidDowntimeSegment>();
+	    DateTime currentStart = eventStart;
+	
+	    // 确保休息时间按先后顺序排列，便于进行线段切割
+	    var sortedRests = restTimes.OrderBy(r => r.StartTime).ToList();
+	
+	    foreach (var rest in sortedRests)
+	    {
+	        if (rest.EndTime <= currentStart) continue; // 休息时间在当前检查点之前，跳过
+	        if (rest.StartTime >= eventEnd) break;      // 休息时间在当前事件之后，直接结束比对
+	
+	        // 如果当前检查点到休息开始前，有一段纯工作时间
+	        if (currentStart < rest.StartTime)
+	        {
+	            // 【修改点 1】：在循环内部，比较的是“当前起点”和“休息开始时间”
+	            // 此时 rest 变量有效，代表当前的休息段落
+	            int diff = GetSqlMinuteDiff(currentStart, rest.StartTime);
+	            
+	            if (diff > abnormalThreshold) // 超过异常阈值才算停机
+	            {
+	                validSegments.Add(new ValidDowntimeSegment { StartTime = currentStart, EndTime = rest.StartTime, DiffMinutes = diff });
+	            }
+	        }
+	        // 将检查点移动到休息结束的时间，跳过休息期
+	        currentStart = new DateTime(Math.Max(currentStart.Ticks, rest.EndTime.Ticks));
+	    }
+	
+	    // 检查最后一段休息结束到事件结束之间的时间
+	    if (currentStart < eventEnd)
+	    {
+	        // 【修改点 2】：在循环外部，比对的是“当前起点”到“整段事件的结束时间”
+	        // 这里没有 rest 对象，而是要用 eventEnd（事件结束时间）！
+	        int finalDiff = GetSqlMinuteDiff(currentStart, eventEnd);
+	        
+	        if (finalDiff > abnormalThreshold)
+	        {
+	            validSegments.Add(new ValidDowntimeSegment { StartTime = currentStart, EndTime = eventEnd, DiffMinutes = finalDiff });
+	        }
+	    }
+	    
+	    return validSegments;
+	}
 
     private List<RawRecord> FetchRemoteRecords(string connStr, DateTime searchDate, DateTime endDate, List<string> tbPPL)
     {
@@ -277,11 +291,14 @@ public class ProductLineAnalyzer
             }
 
             // 2. 获取 scan_record 及关联信息 (在白名单内的产线)
-            string scanQuery = @"
-                SELECT main.product_line_no, main.op_no, main.edit_time AS record_time, main.sn,
-                       ISNULL(cl.camera_note, '') AS camera_note,
-                       ISNULL(mr.user_field2, '') AS batch_no
-                FROM tx02_scan_record main
+            string scanQuery =@"
+			    SELECT main.product_line_no, main.op_no, main.edit_time AS record_time, main.sn,
+			           ISNULL(cl.camera_note, '') AS camera_note,
+			           ISNULL(mr.user_field2, '') AS batch_no
+			    FROM tx02_scan_record main
+			    INNER JOIN TF11_product_line_scan_op op 
+			        ON op.product_line_no = main.product_line_no AND op.op_no = main.op_no
+			    
                 -- 严格还原 SQL 中的 OUTER APPLY 逻辑，取最新的一笔关联记录
                 OUTER APPLY (
                     SELECT TOP 1 camera_note 
@@ -433,7 +450,7 @@ public class ProductLineAnalyzer
         dt.Columns.Add("camera_note", typeof(string));
         dt.Columns.Add("start_time", typeof(DateTime));
         dt.Columns.Add("end_time", typeof(DateTime));
-        dt.Columns.Add("diff_time", typeof(double));
+        dt.Columns.Add("diff_time", typeof(int));
         dt.Columns.Add("hour_name", typeof(string));
         dt.Columns.Add("time_set", typeof(int));
         dt.Columns.Add("batch_no", typeof(string));
